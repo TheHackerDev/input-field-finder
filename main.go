@@ -18,10 +18,19 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
+// Configure HTTP client that ignores TLS errors
+var client = http.Client{
+	Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+	},
+}
+
 // Visited tracks visited URLs, to avoid redundancy & loops
 type Visited struct {
-	URLS  map[string]bool
-	mutex sync.Mutex
+	URLS map[string]bool
+	sync.RWMutex
 }
 
 var visited Visited
@@ -34,10 +43,6 @@ type Whitelist struct {
 }
 
 var whitelist Whitelist
-
-// Create the worker pool, used to set the upper limit & track the number of workers in use.
-var workerPool chan struct{}
-var maxWorkers int // Upper limit of workers
 
 // Create the channels used to pass URLs found during spidering
 // TODO: Find the optimal size of buffer.
@@ -82,6 +87,8 @@ func main() {
 		URLS: make(map[string]bool),
 	}
 
+	var maxWorkers int // Upper limit of workers
+
 	// Configure the max workers based on the level chosen by the user
 	switch *flagConcurrency {
 	case 0:
@@ -104,13 +111,6 @@ func main() {
 		maxWorkers = 20
 	}
 
-	// Initialize the worker pool
-	workerPool = make(chan struct{}, maxWorkers)
-	// Fill the worker pool
-	for i := 0; i < maxWorkers; i++ {
-		workerPool <- struct{}{}
-	}
-
 	// Check if the start URL is valid
 	startURLvalue, err := url.Parse(*flagStartURL)
 	if err != nil || startURLvalue.String() == "" {
@@ -127,51 +127,49 @@ func main() {
 	urlQueue <- startURLvalue
 
 	// Keep working as long as there are workers working or URLs in the queue
-	for len(workerPool) < maxWorkers || len(urlQueue) > 0 {
-		// If there are URLs available, work with it
-		if len(urlQueue) > 0 {
-			// Take a worker from the pool
-			<-workerPool
-			// Pass a URL to the router, concurrently
-			go dataRouter(<-urlQueue) // TODO: Handle errors
+	for len(urlQueue) != 0 {
+		var wg sync.WaitGroup
+		workerCount := 0
+
+	loop:
+		for {
+			select {
+			case url := <-urlQueue:
+				wg.Add(1)
+				workerCount++
+				// Pass a URL to the router, concurrently
+				go dataRouter(url, &wg) // TODO: Handle errors
+				if workerCount >= maxWorkers {
+					wg.Wait()
+					workerCount = 0
+				}
+			default: // urlQueue is empty
+				break loop
+			}
 		}
+
+		wg.Wait()
 	}
 }
 
 // Function dataRouter requests the given URL, and passes it to various helper functions.
 // It returns any errors it receives throughout this process.
 // Output functionality currently occurs in the helper functions.
-func dataRouter(urlValue *url.URL) (err error) {
+func dataRouter(urlValue *url.URL, wg *sync.WaitGroup) (err error) {
 	// Ensure that the worker goes back in the pool before returning
-	defer func() {
-		workerPool <- struct{}{}
-	}()
+	defer wg.Done()
 
 	// Remove hashes from the URL
 	urlValue.Fragment = ""
 
 	// Ensure we haven't visited the URL before
+	visited.RLock()
 	if _, exists := visited.URLS[urlValue.String()]; exists {
 		// Has already been visited
+		visited.RUnlock()
 		return
 	}
-
-	// Set up an internal worker queue for concurrency
-	internalQueue := make(chan struct{}, 2)
-	for i := 0; i < 2; i++ {
-		internalQueue <- struct{}{}
-	}
-
-	// Configure HTTP client that ignores TLS errors
-	tlsConfig := &tls.Config{
-		InsecureSkipVerify: true,
-	}
-	transport := &http.Transport{
-		TLSClientConfig: tlsConfig,
-	}
-	client := http.Client{
-		Transport: transport,
-	}
+	visited.RUnlock()
 
 	// Get the first URL's document body
 	response, err := client.Get(urlValue.String())
@@ -184,22 +182,21 @@ func dataRouter(urlValue *url.URL) (err error) {
 		return
 	}
 
+	var innerwg sync.WaitGroup
+	innerwg.Add(2)
 	// Run the spidering function on the html document
-	<-internalQueue
-	go getAnchors(document, urlValue, internalQueue)
+	go getAnchors(document, urlValue, &innerwg)
 
 	// Search for input fields in the html document
-	<-internalQueue
-	go getInputs(document, urlValue, internalQueue)
+	go getInputs(document, urlValue, &innerwg)
 
 	// Don't return until all goroutines have completed
-	<-internalQueue // One for spider function
-	<-internalQueue // One for input finder function
+	innerwg.Wait()
 
 	// Add the URL to the visited list, safely
-	visited.mutex.Lock()
-	defer visited.mutex.Unlock()
+	visited.Lock()
 	visited.URLS[urlValue.String()] = true
+	visited.Unlock()
 
 	return
 }
@@ -209,11 +206,9 @@ func dataRouter(urlValue *url.URL) (err error) {
 // It uses the provided worker pool to perform the task concurrently for the calling function,
 // returning a worker back to the pool upon completion.
 // urlValue is the current URL that it is working with; this is used for contextual logging.
-func getAnchors(document *html.Node, currentURL *url.URL, pool chan struct{}) {
+func getAnchors(document *html.Node, currentURL *url.URL, wg *sync.WaitGroup) {
 	// Make sure the workers are returned to the worker pool
-	defer func() {
-		pool <- struct{}{}
-	}()
+	defer wg.Done()
 
 	// Recursively search the document tree for anchor values
 	var nodeSearch func(*html.Node)
@@ -250,6 +245,7 @@ func getAnchors(document *html.Node, currentURL *url.URL, pool chan struct{}) {
 				}
 			}
 		}
+
 		// recurse down the tree
 		for child := node.FirstChild; child != nil; child = child.NextSibling {
 			nodeSearch(child)
@@ -270,10 +266,12 @@ func addURL(urlValue *url.URL) {
 		urlString := urlValue.String()
 
 		// Make sure the URL has not been visited
+		visited.RLock()
 		if _, exists := visited.URLS[urlString]; !exists {
 			// Add the URL to the queue
 			urlQueue <- urlValue
 		}
+		visited.RUnlock()
 	}
 
 	return
@@ -300,11 +298,9 @@ func isWhitelisted(urlValue *url.URL) (whitelisted bool) {
 // It uses the worker pool to perform the task concurrently from the calling function,
 // returning the worker to the pool upon completion.
 // urlValue is the current URL that it is working with; this is used for contextual logging.
-func getInputs(document *html.Node, urlValue *url.URL, pool chan struct{}) {
+func getInputs(document *html.Node, urlValue *url.URL, wg *sync.WaitGroup) {
 	// Make sure the workers are returned to the worker pool
-	defer func() {
-		pool <- struct{}{}
-	}()
+	defer wg.Done()
 
 	// Create a slice to hold all the input fields for the current URL
 	var inputs []string
