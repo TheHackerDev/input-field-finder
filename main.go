@@ -13,7 +13,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
@@ -45,7 +44,17 @@ type Whitelist struct {
 var whitelist Whitelist
 
 // Create the channels used to pass URLs found during spidering
-var urlQueue chan *url.URL
+// Make it a really high value, to prevent blocking on the pipe
+var urlQueue = make(chan *url.URL, 1000000)
+
+// Workers struct tracks the current workers in use
+type Workers struct {
+	Maximum int
+	Current int
+	mutex   sync.RWMutex
+}
+
+var workers Workers
 
 // The command-line flags
 var flagStartURL = flag.String("url", "", "[REQUIRED] `URL` to start spidering from. The domain and scheme will be used as the whitelist.") // TODO: Allow multiple URLs, comma-separated.
@@ -93,22 +102,22 @@ func main() {
 	switch *flagConcurrency {
 	case 0:
 		// No concurrency
-		urlQueue = make(chan *url.URL, 1)
+		workers.Maximum = 1
 	case 1:
 		// Lowest level of concurrency
-		urlQueue = make(chan *url.URL, 5)
+		workers.Maximum = 5
 	case 2:
 		// Low level of concurrency
-		urlQueue = make(chan *url.URL, 10)
+		workers.Maximum = 10
 	case 4:
 		// High level of concurrency
-		urlQueue = make(chan *url.URL, 50)
+		workers.Maximum = 50
 	case 5:
 		// Highest level of concurrency
-		urlQueue = make(chan *url.URL, 100)
+		workers.Maximum = 100
 	default:
 		// Medium level of concurrency (-concurrency=3)
-		urlQueue = make(chan *url.URL, 20)
+		workers.Maximum = 20
 	}
 
 	// Initialize the wait group
@@ -132,19 +141,57 @@ func main() {
 	// Add the starting URL to visited to prevent it from being added again
 	addVisited(startURLvalue)
 
-	// Keep working as long as there are URLs in the queue
-	for len(urlQueue) > 0 {
-		go func() {
-			wg.Add(1)
-			dataRouter(<-urlQueue)
-			wg.Done()
-		}()
-		// Add a back-off period, in case of network latency issues
-		time.Sleep(100 * time.Millisecond)
+	// Keep working as long as there are URLs in the queue or workers working
+	// TODO: This needs to not end early. Need to find a way to ensure that it checks workers AND the queue
+	for len(urlQueue) > 0 || workersWorking() {
+		// Only continue if there are workers available, and URLs in the queue
+		if len(urlQueue) > 0 && workersAvailable() {
+			// Start working on the next URL in the queue
+			go func() {
+				wg.Add(1)
+				addWorker()
+				defer wg.Done()
+				defer removeWorker()
+				dataRouter(<-urlQueue)
+			}()
+		}
 	}
 
 	// Wait for all processes to finish
 	wg.Wait()
+}
+
+// Function workersWorking is a helper function that safely determines
+// whether there are currently any workers working.
+func workersWorking() (working bool) {
+	workers.mutex.RLock()
+	defer workers.mutex.RUnlock()
+	working = workers.Current > 0
+	return
+}
+
+// Function workersAvailable is a helper function that safely determines
+// whether there are workers available, based on the maximum allowed to
+// run concurrently.
+func workersAvailable() (available bool) {
+	workers.mutex.RLock()
+	defer workers.mutex.RUnlock()
+	available = workers.Current < workers.Maximum
+	return
+}
+
+// Function removeWorker safely removes a worker to the current workers struct.
+func addWorker() {
+	workers.mutex.Lock()
+	defer workers.mutex.Unlock()
+	workers.Current--
+}
+
+// Function addWorker safely adds a worker to the current workers struct.
+func removeWorker() {
+	workers.mutex.Lock()
+	defer workers.mutex.Unlock()
+	workers.Current++
 }
 
 // Function dataRouter requests the given URL, and passes it to various helper functions.
@@ -156,6 +203,9 @@ func dataRouter(urlValue *url.URL) (err error) {
 
 	// Remove hashes from the URL
 	urlValue.Fragment = ""
+
+	// Add URL to visited right away
+	addVisited(urlValue)
 
 	// Get the first URL's document body
 	response, err := client.Get(urlValue.String())
@@ -183,9 +233,6 @@ func dataRouter(urlValue *url.URL) (err error) {
 		getInputs(document, urlValue)
 		wg.Done()
 	}()
-
-	// Add the URL to the visited list, safely
-	addVisited(urlValue)
 
 	// Wait for all the concurrent processes to finish
 	wg.Wait()
@@ -335,3 +382,6 @@ func getInputs(document *html.Node, urlValue *url.URL) {
 }
 
 // TODO: Add in the option for verbose logging (all URLs spidered for basic verbosity, and when it reaches spidering/input finding functions in double verbosity)
+// BUG: Spider exits early sometimes
+// TODO: Find optimal value for URLQueue size
+// TODO: Find the best way to do the main() for loop, so it doesn't exit early, yet also doesn't cause any kind of unecessary delay. Need a definitive and reliable way to check whether there are still URLs available, and workers working.
