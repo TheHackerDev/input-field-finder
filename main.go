@@ -49,6 +49,8 @@ var urlQueue = make(chan *url.URL, 1000000)
 
 // The command-line flags
 var flagStartURL = flag.String("url", "", "[REQUIRED] `URL` to start spidering from. The domain and scheme will be used as the whitelist.") // TODO: Allow multiple URLs, comma-separated.
+var flagVerbose = flag.Bool("v", false, "Enable verbose logging")
+var flagVerbose2 = flag.Bool("vv", false, "Enable doubly-verbose logging")
 
 // Function main is the entry point for the application. It parses the flags
 // provided by the user and calls the router function for any URLs
@@ -67,8 +69,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\t%s -url=https://www.example.com/\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\t%s -url=http://127.0.0.1/\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\t%s -url=http://127.0.0.1:8080/\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "\t%s -url=http://www.example.com/example/\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "\t%s -url=http://www.example.com/example/page/1?id=2#heading\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\t%s -v -url=http://www.example.com/example/\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\t%s -v -url=http://www.example.com/example/page/1?id=2#heading\n", os.Args[0])
 	}
 
 	// Parse the command-line flags provided
@@ -157,6 +159,11 @@ func dataRouter(urlValue *url.URL) (err error) {
 // returning a worker back to the pool upon completion.
 // urlValue is the current URL that it is working with; this is used for contextual logging.
 func getAnchors(document *html.Node, currentURL *url.URL) {
+	// VERBOSE 2
+	if *flagVerbose2 {
+		fmt.Printf("[VERBOSE] [%s] Processing HTML for links\n", currentURL.String())
+	}
+
 	// Recursively search the document tree for anchor values
 	var nodeSearch func(*html.Node)
 	nodeSearch = func(node *html.Node) {
@@ -226,6 +233,10 @@ func addURL(urlValue *url.URL) {
 		_, exists := visited.URLS[urlString]
 		_, existsNoSlash := visited.URLS[urlStringNoSlash]
 		if !exists && !existsNoSlash {
+			// VERBOSE
+			if *flagVerbose || *flagVerbose2 {
+				fmt.Printf("[VERBOSE] [%s] URL found\n", urlString)
+			}
 			// Add the URL to visited now, to prevent race issues
 			visited.URLS[urlValue.String()] = true
 			// Add the URL to the queue
@@ -257,6 +268,11 @@ func isWhitelisted(urlValue *url.URL) (whitelisted bool) {
 // returning the worker to the pool upon completion.
 // urlValue is the current URL that it is working with; this is used for contextual logging.
 func getInputs(document *html.Node, urlValue *url.URL) {
+	// VERBOSE 2
+	if *flagVerbose2 {
+		fmt.Printf("[VERBOSE] [%s] Processing HTML for inputs\n", urlValue.String())
+	}
+
 	// Create a slice to hold all the input fields for the current URL
 	var inputs []string
 
@@ -296,5 +312,5 @@ func getInputs(document *html.Node, urlValue *url.URL) {
 	}
 }
 
-// TODO: Add in the option for verbose logging (all URLs spidered for basic verbosity, and when it reaches spidering/input finding functions in double verbosity)
 // TODO: Find optimal value for URLQueue size
+// TODO: Add option to automatically include any subdomains found while spidering
