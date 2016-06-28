@@ -13,7 +13,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
@@ -48,18 +47,8 @@ var whitelist Whitelist
 // Make it a really high value, to prevent blocking on the pipe
 var urlQueue = make(chan *url.URL, 1000000)
 
-// Workers struct tracks the current workers in use
-type Workers struct {
-	Maximum int
-	Current int
-	mutex   sync.RWMutex
-}
-
-var workers Workers
-
 // The command-line flags
 var flagStartURL = flag.String("url", "", "[REQUIRED] `URL` to start spidering from. The domain and scheme will be used as the whitelist.") // TODO: Allow multiple URLs, comma-separated.
-var flagConcurrency = flag.Uint("concurrency", 3, "Level of concurrency. `0-5`; higher is faster (network requests & processing), 0 for no concurrency. Default: 3")
 
 // Function main is the entry point for the application. It parses the flags
 // provided by the user and calls the router function for any URLs
@@ -80,8 +69,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\t%s -url=http://127.0.0.1:8080/\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\t%s -url=http://www.example.com/example/\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\t%s -url=http://www.example.com/example/page/1?id=2#heading\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "\t%s -concurrency=5 -url=https://www.example.com/\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "\t%s -concurrency=0 -url=http://www.example.com/\n", os.Args[0])
 	}
 
 	// Parse the command-line flags provided
@@ -98,31 +85,6 @@ func main() {
 	visited = Visited{
 		URLS: make(map[string]bool),
 	}
-
-	// Configure the max workers based on the level chosen by the user
-	switch *flagConcurrency {
-	case 0:
-		// No concurrency
-		workers.Maximum = 1
-	case 1:
-		// Lowest level of concurrency
-		workers.Maximum = 5
-	case 2:
-		// Low level of concurrency
-		workers.Maximum = 10
-	case 4:
-		// High level of concurrency
-		workers.Maximum = 50
-	case 5:
-		// Highest level of concurrency
-		workers.Maximum = 100
-	default:
-		// Medium level of concurrency (-concurrency=3)
-		workers.Maximum = 20
-	}
-
-	// Initialize the wait group
-	var wg sync.WaitGroup
 
 	// Check if the start URL is valid
 	startURLvalue, err := url.Parse(*flagStartURL)
@@ -141,75 +103,12 @@ func main() {
 	// Add the starting URL to the queue
 	addURL(startURLvalue)
 
-	// Keep working as long as there are URLs in the queue or workers working
-	// TODO: This needs to not end early. Need to find a way to ensure that it checks workers AND the queue
-	for len(urlQueue) > 0 || workersWorking() {
-		// Only continue if there are workers available, and URLs in the queue
-		if len(urlQueue) > 0 && workersAvailable() {
-			// Start working on the next URL in the queue
-			go func() {
-				wg.Add(1)
-				addWorker()
-				defer wg.Done()
-				defer removeWorker()
-				dataRouter(<-urlQueue)
-			}()
-			// Add delay, in case of latency
-			//time.Sleep(10000 * time.Millisecond)
-		}
+	// Keep working as long as there are URLs in the queue
+	for len(urlQueue) > 0 {
+		// Start working on the next URL in the queue
+		dataRouter(<-urlQueue)
+
 	}
-
-	// Wait for all processes to finish
-	wg.Wait()
-
-	// DEBUG
-	time.Sleep(10000 * time.Millisecond)
-
-	// DEBUG
-	qlen := len(urlQueue)
-	workwork := workersWorking()
-	workav := workersAvailable()
-
-	// DEBUG
-	fmt.Printf("[DEBUG] Queue length: %v\n", qlen)
-	fmt.Printf("[DEBUG] Workers working: %v\n", workwork)
-	fmt.Printf("[DEBUG] Workers available: %v\n", workav)
-
-	// DEBUG
-	_ = "breakpoint"
-}
-
-// Function workersWorking is a helper function that safely determines
-// whether there are currently any workers working.
-func workersWorking() (working bool) {
-	workers.mutex.RLock()
-	defer workers.mutex.RUnlock()
-	working = workers.Current > 0
-	return
-}
-
-// Function workersAvailable is a helper function that safely determines
-// whether there are workers available, based on the maximum allowed to
-// run concurrently.
-func workersAvailable() (available bool) {
-	workers.mutex.RLock()
-	defer workers.mutex.RUnlock()
-	available = workers.Current < workers.Maximum
-	return
-}
-
-// Function removeWorker safely removes a worker to the current workers struct.
-func addWorker() {
-	workers.mutex.Lock()
-	defer workers.mutex.Unlock()
-	workers.Current--
-}
-
-// Function addWorker safely adds a worker to the current workers struct.
-func removeWorker() {
-	workers.mutex.Lock()
-	defer workers.mutex.Unlock()
-	workers.Current++
 }
 
 // Function dataRouter requests the given URL, and passes it to various helper functions.
@@ -306,8 +205,6 @@ func getAnchors(document *html.Node, currentURL *url.URL) {
 // Function addURL simply adds a URL to the URL queue, if it has
 // not already been visited.
 func addURL(urlValue *url.URL) {
-	// DEBUG
-	// fmt.Printf("[DEBUG] URL: %s\n", urlValue.String())
 	// Make sure the URL is in the whitelisted domains list
 	if isWhitelisted(urlValue) {
 		// Rebuild the url string, removing any hashes from the link
@@ -400,5 +297,4 @@ func getInputs(document *html.Node, urlValue *url.URL) {
 }
 
 // TODO: Add in the option for verbose logging (all URLs spidered for basic verbosity, and when it reaches spidering/input finding functions in double verbosity)
-// BUG: Spider exits early sometimes (fix main for loop)
 // TODO: Find optimal value for URLQueue size
