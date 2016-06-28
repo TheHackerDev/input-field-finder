@@ -13,6 +13,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
@@ -134,12 +135,11 @@ func main() {
 	// Remove hashes from the URL
 	startURLvalue.Fragment = ""
 
-	// Add the starting URL to the whitelist and queue
+	// Add the starting URL to the whitelist
 	whitelist = Whitelist{Targets: []*url.URL{startURLvalue}}
-	urlQueue <- startURLvalue
 
-	// Add the starting URL to visited to prevent it from being added again
-	addVisited(startURLvalue)
+	// Add the starting URL to the queue
+	addURL(startURLvalue)
 
 	// Keep working as long as there are URLs in the queue or workers working
 	// TODO: This needs to not end early. Need to find a way to ensure that it checks workers AND the queue
@@ -154,11 +154,29 @@ func main() {
 				defer removeWorker()
 				dataRouter(<-urlQueue)
 			}()
+			// Add delay, in case of latency
+			//time.Sleep(10000 * time.Millisecond)
 		}
 	}
 
 	// Wait for all processes to finish
 	wg.Wait()
+
+	// DEBUG
+	time.Sleep(10000 * time.Millisecond)
+
+	// DEBUG
+	qlen := len(urlQueue)
+	workwork := workersWorking()
+	workav := workersAvailable()
+
+	// DEBUG
+	fmt.Printf("[DEBUG] Queue length: %v\n", qlen)
+	fmt.Printf("[DEBUG] Workers working: %v\n", workwork)
+	fmt.Printf("[DEBUG] Workers available: %v\n", workav)
+
+	// DEBUG
+	_ = "breakpoint"
 }
 
 // Function workersWorking is a helper function that safely determines
@@ -201,12 +219,6 @@ func dataRouter(urlValue *url.URL) (err error) {
 	// Set up a wait group for concurrency
 	var wg sync.WaitGroup
 
-	// Remove hashes from the URL
-	urlValue.Fragment = ""
-
-	// Add URL to visited right away
-	addVisited(urlValue)
-
 	// Get the first URL's document body
 	response, err := client.Get(urlValue.String())
 	if err != nil {
@@ -238,14 +250,6 @@ func dataRouter(urlValue *url.URL) (err error) {
 	wg.Wait()
 
 	return
-}
-
-// Function addVisited safely adds a given URL value to the visited slice,
-// to prevent it from being tested again.
-func addVisited(urlValue *url.URL) {
-	visited.mutex.Lock()
-	defer visited.mutex.Unlock()
-	visited.URLS[urlValue.String()] = true
 }
 
 // Function getAnchors parses out the links from anchor elements found in the
@@ -302,21 +306,35 @@ func getAnchors(document *html.Node, currentURL *url.URL) {
 // Function addURL simply adds a URL to the URL queue, if it has
 // not already been visited.
 func addURL(urlValue *url.URL) {
+	// DEBUG
+	// fmt.Printf("[DEBUG] URL: %s\n", urlValue.String())
 	// Make sure the URL is in the whitelisted domains list
 	if isWhitelisted(urlValue) {
 		// Rebuild the url string, removing any hashes from the link
 		urlValue.Fragment = ""
 		urlString := urlValue.String()
 
+		// Check for trailing slash
+		// TODO: Optimize
+		var urlStringNoSlash string
+		if strings.HasSuffix(urlString, "/") {
+			urlStringNoSlash = urlString[:len(urlString)-1]
+		} else {
+			urlStringNoSlash = urlString
+		}
+
 		// Make sure the URL has not been visited
-		visited.mutex.RLock()
-		defer visited.mutex.RUnlock()
-		if _, exists := visited.URLS[urlString]; !exists {
+		visited.mutex.Lock()
+		defer visited.mutex.Unlock()
+		_, exists := visited.URLS[urlString]
+		_, existsNoSlash := visited.URLS[urlStringNoSlash]
+		if !exists && !existsNoSlash {
+			// Add the URL to visited now, to prevent race issues
+			visited.URLS[urlValue.String()] = true
 			// Add the URL to the queue
 			urlQueue <- urlValue
 		}
 	}
-
 	return
 }
 
@@ -382,6 +400,5 @@ func getInputs(document *html.Node, urlValue *url.URL) {
 }
 
 // TODO: Add in the option for verbose logging (all URLs spidered for basic verbosity, and when it reaches spidering/input finding functions in double verbosity)
-// BUG: Spider exits early sometimes
+// BUG: Spider exits early sometimes (fix main for loop)
 // TODO: Find optimal value for URLQueue size
-// TODO: Find the best way to do the main() for loop, so it doesn't exit early, yet also doesn't cause any kind of unecessary delay. Need a definitive and reliable way to check whether there are still URLs available, and workers working.
