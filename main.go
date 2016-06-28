@@ -49,8 +49,8 @@ var urlQueue = make(chan *url.URL, 1000000)
 
 // The command-line flags
 var flagStartURL = flag.String("url", "", "[REQUIRED] `URL` to start spidering from. The domain and scheme will be used as the whitelist.") // TODO: Allow multiple URLs, comma-separated.
-var flagVerbose = flag.Bool("v", false, "Enable verbose logging")
-var flagVerbose2 = flag.Bool("vv", false, "Enable doubly-verbose logging")
+var flagVerbose = flag.Bool("v", false, "Enable verbose logging to the console.")
+var flagVerbose2 = flag.Bool("vv", false, "Enable doubly-verbose logging to the console.")
 
 // Function main is the entry point for the application. It parses the flags
 // provided by the user and calls the router function for any URLs
@@ -70,7 +70,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\t%s -url=http://127.0.0.1/\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\t%s -url=http://127.0.0.1:8080/\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\t%s -v -url=http://www.example.com/example/\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "\t%s -v -url=http://www.example.com/example/page/1?id=2#heading\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\t%s -vv -url=http://www.example.com/example/page/1?id=2#heading\n", os.Args[0])
 	}
 
 	// Parse the command-line flags provided
