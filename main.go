@@ -29,7 +29,7 @@ var client = http.Client{
 
 // Visited tracks visited URLs, to avoid redundancy & loops
 type Visited struct {
-	URLS  map[string]bool
+	URLs  map[string]bool
 	mutex sync.RWMutex
 }
 
@@ -43,9 +43,13 @@ type Whitelist struct {
 
 var whitelist Whitelist
 
-// Create the channels used to pass URLs found during spidering
-// Make it a really high value, to prevent blocking on the pipe
-var urlQueue = make(chan *url.URL, 1000000)
+// URLQueue is a queue used to pass URLs found during spidering
+type URLQueue struct {
+	URLs  []*url.URL
+	mutex sync.RWMutex
+}
+
+var urlQueue URLQueue
 
 // The command-line flags
 var flagStartURL = flag.String("url", "", "[REQUIRED] `URL` to start spidering from. The domain and scheme will be used as the whitelist.") // TODO: Allow multiple URLs, comma-separated.
@@ -56,7 +60,7 @@ var flagVerbose2 = flag.Bool("vv", false, "Enable doubly-verbose logging to the 
 // provided by the user and calls the router function for any URLs
 // passed into the URL queue.
 func main() {
-	// Change output location of logs (TEMP)
+	// Change output location of logs
 	log.SetOutput(os.Stdout)
 
 	// Configure the usage message
@@ -85,7 +89,7 @@ func main() {
 
 	// Set up the visited URLs
 	visited = Visited{
-		URLS: make(map[string]bool),
+		URLs: make(map[string]bool),
 	}
 
 	// Check if the start URL is valid
@@ -106,9 +110,15 @@ func main() {
 	addURL(startURLvalue)
 
 	// Keep working as long as there are URLs in the queue
-	for len(urlQueue) > 0 {
+	for len(urlQueue.URLs) > 0 {
+		// Pop the top URL from the queue
+		urlQueue.mutex.Lock()
+		var urlVal *url.URL
+		urlVal, urlQueue.URLs = urlQueue.URLs[len(urlQueue.URLs)-1], urlQueue.URLs[:len(urlQueue.URLs)-1]
+		urlQueue.mutex.Unlock()
+
 		// Start working on the next URL in the queue
-		dataRouter(<-urlQueue)
+		dataRouter(urlVal)
 
 	}
 }
@@ -219,7 +229,6 @@ func addURL(urlValue *url.URL) {
 		urlString := urlValue.String()
 
 		// Check for trailing slash
-		// TODO: Optimize
 		var urlStringNoSlash string
 		if strings.HasSuffix(urlString, "/") {
 			urlStringNoSlash = urlString[:len(urlString)-1]
@@ -230,17 +239,19 @@ func addURL(urlValue *url.URL) {
 		// Make sure the URL has not been visited
 		visited.mutex.Lock()
 		defer visited.mutex.Unlock()
-		_, exists := visited.URLS[urlString]
-		_, existsNoSlash := visited.URLS[urlStringNoSlash]
+		_, exists := visited.URLs[urlString]
+		_, existsNoSlash := visited.URLs[urlStringNoSlash]
 		if !exists && !existsNoSlash {
 			// VERBOSE
 			if *flagVerbose || *flagVerbose2 {
 				fmt.Printf("[VERBOSE] [%s] URL found\n", urlString)
 			}
 			// Add the URL to visited now, to prevent race issues
-			visited.URLS[urlValue.String()] = true
+			visited.URLs[urlValue.String()] = true
 			// Add the URL to the queue
-			urlQueue <- urlValue
+			urlQueue.mutex.Lock()
+			defer urlQueue.mutex.Unlock()
+			urlQueue.URLs = append(urlQueue.URLs, urlValue)
 		}
 	}
 	return
@@ -312,5 +323,4 @@ func getInputs(document *html.Node, urlValue *url.URL) {
 	}
 }
 
-// TODO: Find optimal value for URLQueue size
 // TODO: Add option to automatically include any subdomains found while spidering
