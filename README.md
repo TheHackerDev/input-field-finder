@@ -19,7 +19,7 @@ This is a command-line tool. Use the following flags to run the program:
 - `input-field-finder -vv -url=http://www.example.com/example/page/1?id=2#heading`: Searches `www.example.com` using the `http` scheme, starting at the `/example/page/1` path, with a query of `id=2`, the `#heading` URL fragment, with verbose logging.
 
 ## Binaries
-The program has been written in Go, and as such can be compiled to all the common platforms in use today. The following architectures have been compiled, and can be found in the releases tab:
+The program has been written in Go, and as such can be compiled to all the common platforms in use today. The following architectures have been compiled, and can be found in the [releases](https://github.com/insp3ctre/input-field-finder/releases) tab:
 - Windows amd64
 - Windows 386
 - Linux amd64
