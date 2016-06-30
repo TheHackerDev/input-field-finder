@@ -30,5 +30,8 @@ The program has been written in Go, and as such can be compiled to all the commo
 Alternatively, you can compile the code yourself. See [Dave Cheney](https://twitter.com/davecheney)'s excellent [post](http://dave.cheney.net/2015/08/22/cross-compilation-with-go-1-5 "Cross-compilation with Go 1.5") on the topic.
 
 ## Planned Improvements
-- Add the ability to pass multiple URLs in the `-url` flag
-- Add the ability to pass in a file of URLs
+1. Ability to pass multiple URLs in the `-url` flag.
+2. Ability to pass in a file of URLs.
+3. Option to search all subdomains found during spidering as well.
+4. Support for single-page applications (SPA), by rendering JavaScript in pages, and THEN parsing the responses.
+5. "Cookie jar" functionality for authenticated scans.
