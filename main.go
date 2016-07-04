@@ -52,7 +52,7 @@ type URLQueue struct {
 var urlQueue URLQueue
 
 // The command-line flags
-var flagStartURL = flag.String("url", "", "[REQUIRED] `URL` to start spidering from. The domain and scheme will be used as the whitelist.") // TODO: Allow multiple URLs, comma-separated.
+var flagStartURL = flag.String("url", "", "[REQUIRED] `URL or list of URLs` (comma-separated) to start spidering from. The domain and scheme will be used as the whitelist.")
 var flagVerbose = flag.Bool("v", false, "Enable verbose logging to the console.")
 var flagVerbose2 = flag.Bool("vv", false, "Enable doubly-verbose logging to the console.")
 
@@ -66,13 +66,14 @@ func main() {
 	// Configure the usage message
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
-		fmt.Fprint(os.Stderr, "  --help: Displays this message\n")
+		fmt.Fprint(os.Stderr, "  --help/-h: Displays this message\n")
 		flag.PrintDefaults()
 		fmt.Fprint(os.Stderr, "\nExamples:\n")
 		fmt.Fprintf(os.Stderr, "\t%s -url=http://www.example.com/\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\t%s -url=https://www.example.com/\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\t%s -url=http://127.0.0.1/\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\t%s -url=http://127.0.0.1:8080/\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\t%s -url=http://127.0.0.1,http://www.example.com/\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\t%s -v -url=http://www.example.com/example/\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\t%s -vv -url=http://www.example.com/example/page/1?id=2#heading\n", os.Args[0])
 	}
@@ -92,22 +93,28 @@ func main() {
 		URLs: make(map[string]bool),
 	}
 
-	// Check if the start URL is valid
-	startURLvalue, err := url.Parse(*flagStartURL)
-	if err != nil || startURLvalue.String() == "" {
-		log.Println("Invalid URL provided.")
-		flag.Usage()
-		os.Exit(1)
+	// Prepare the starting URLs
+	startURLs := strings.Split(*flagStartURL, ",")
+
+	// Iterate through the URLs and add them to the whitelist
+	for _, urlValue := range startURLs {
+		// Check if the start URL is valid
+		validURL, err := url.Parse(urlValue)
+		if err != nil || validURL.String() == "" {
+			log.Println("Invalid URL provided.")
+			flag.Usage()
+			os.Exit(1)
+		}
+
+		// Remove hashes from the URL
+		validURL.Fragment = ""
+
+		// Add the URL to the whitelist
+		whitelist.Targets = append(whitelist.Targets, validURL)
+
+		// Add the URL to the queue
+		addURL(validURL)
 	}
-
-	// Remove hashes from the URL
-	startURLvalue.Fragment = ""
-
-	// Add the starting URL to the whitelist
-	whitelist = Whitelist{Targets: []*url.URL{startURLvalue}}
-
-	// Add the starting URL to the queue
-	addURL(startURLvalue)
 
 	// Keep working as long as there are URLs in the queue
 	for len(urlQueue.URLs) > 0 {
