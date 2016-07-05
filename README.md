@@ -43,7 +43,7 @@ Alternatively, you can compile the code yourself. See [Dave Cheney](https://twit
 ## Planned Improvements
 
 1. ~~Ability to pass multiple URLs in the `-url` flag.~~
-2. Ability to pass in a file of URLs.
+2. ~~Ability to pass in a file of URLs.~~
 3. Option to search all subdomains found during spidering as well.
 4. Support for single-page applications (SPA), by rendering JavaScript in pages, and THEN parsing the responses.
 5. "Cookie jar" functionality for authenticated scans.
