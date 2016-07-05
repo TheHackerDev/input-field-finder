@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bufio"
 	"crypto/tls"
 	"flag"
 	"fmt"
@@ -52,7 +53,8 @@ type URLQueue struct {
 var urlQueue URLQueue
 
 // The command-line flags
-var flagStartURL = flag.String("url", "", "[REQUIRED] `URL or list of URLs` (comma-separated) to start spidering from. The domain and scheme will be used as the whitelist.")
+var flagStartURL = flag.String("urls", "", "URL or comma-separated list of URLs to search. The domain and scheme will be used as the whitelist.")
+var flagURLFile = flag.String("url-file", "", "The location (relative or absolute path) of a file of newline-separated URLs to search.")
 var flagVerbose = flag.Bool("v", false, "Enable verbose logging to the console.")
 var flagVerbose2 = flag.Bool("vv", false, "Enable doubly-verbose logging to the console.")
 
@@ -69,21 +71,23 @@ func main() {
 		fmt.Fprint(os.Stderr, "  --help/-h: Displays this message\n")
 		flag.PrintDefaults()
 		fmt.Fprint(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "\t%s -url=http://www.example.com/\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "\t%s -url=https://www.example.com/\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "\t%s -url=http://127.0.0.1/\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "\t%s -url=http://127.0.0.1:8080/\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "\t%s -url=http://127.0.0.1,http://www.example.com/\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "\t%s -v -url=http://www.example.com/example/\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "\t%s -vv -url=http://www.example.com/example/page/1?id=2#heading\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\t%s -urls=http://www.example.com/\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\t%s -urls=https://www.example.com/\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\t%s -urls=http://127.0.0.1/\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\t%s -urls=http://127.0.0.1:8080/\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\t%s -urls=http://127.0.0.1,http://www.example.com/\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\t%s -url-file=/root/urls.txt\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\t%s -url-file=urls.txt\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\t%s -v -urls=http://www.example.com/example/\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\t%s -vv -urls=http://www.example.com/example/page/1?id=2#heading\n", os.Args[0])
 	}
 
 	// Parse the command-line flags provided
 	flag.Parse()
 
 	// Ensure that we have required flags
-	if *flagStartURL == "" {
-		// Default value provided
+	if *flagStartURL == "" && *flagURLFile == "" {
+		// Default values provided
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -93,27 +97,70 @@ func main() {
 		URLs: make(map[string]bool),
 	}
 
-	// Prepare the starting URLs
-	startURLs := strings.Split(*flagStartURL, ",")
+	// Check for values in the `-urls` flag
+	if *flagStartURL != "" {
+		// Prepare the starting URLs
+		startURLs := strings.Split(*flagStartURL, ",")
 
-	// Iterate through the URLs and add them to the whitelist
-	for _, urlValue := range startURLs {
-		// Check if the start URL is valid
-		validURL, err := url.Parse(urlValue)
-		if err != nil || validURL.String() == "" {
-			log.Println("Invalid URL provided.")
+		// Iterate through the URLs and add them to the whitelist
+		for _, urlValue := range startURLs {
+			// Check if the start URL is valid
+			validURL, err := url.Parse(urlValue)
+			if err != nil || validURL.String() == "" {
+				log.Println("[ERROR] Invalid URL provided.")
+				flag.Usage()
+				os.Exit(1)
+			}
+
+			// Remove hashes from the URL
+			validURL.Fragment = ""
+
+			// Add the URL to the whitelist
+			whitelist.Targets = append(whitelist.Targets, validURL)
+
+			// Add the URL to the queue
+			addURL(validURL)
+		}
+	}
+
+	// Check for values in the `-url-file` flag
+	if *flagURLFile != "" {
+		// Attempt to open the URL file
+		file, err := os.Open(*flagURLFile)
+		if err != nil {
+			// Error opening the file
+			log.Printf("[ERROR] Unable to open the file: %s\n", *flagURLFile)
 			flag.Usage()
 			os.Exit(1)
 		}
 
-		// Remove hashes from the URL
-		validURL.Fragment = ""
+		// Ensure the file is closed
+		defer file.Close()
 
-		// Add the URL to the whitelist
-		whitelist.Targets = append(whitelist.Targets, validURL)
+		// Initialize the file scanner
+		scanner := bufio.NewScanner(file)
 
-		// Add the URL to the queue
-		addURL(validURL)
+		// Iterate through the lines of the file
+		for scanner.Scan() {
+			// Grab the next URL
+			nextLine := scanner.Text()
+			validURL, err := url.Parse(nextLine)
+			if err != nil {
+				// Invalid URL provided
+				log.Printf("[ERROR] Invalid URL provided: %s\n", nextLine)
+				flag.Usage()
+				os.Exit(1)
+			}
+
+			// Remove hashes from the URL
+			validURL.Fragment = ""
+
+			// Add the URL to the whitelist
+			whitelist.Targets = append(whitelist.Targets, validURL)
+
+			// Add the URL to the queue
+			addURL(validURL)
+		}
 	}
 
 	// Keep working as long as there are URLs in the queue
@@ -329,5 +376,3 @@ func getInputs(document *html.Node, urlValue *url.URL) {
 		fmt.Println()
 	}
 }
-
-// TODO: Add option to automatically include any subdomains found while spidering

@@ -10,19 +10,22 @@ Input fields are the most common vector/sink for web application vulnerabilities
 
 This is a command-line tool. Use the following flags to run the program:
 
-- `-url`: (Required) This is the URL, or list of URLs (comma-separated) to start spidering from. The domain and scheme will be used as the whitelist for targets to spider.
+- `-urls`: URL or comma-separated list of URLs to search. The domain and scheme will be used as the whitelist.
+- `-url-file`: The location (relative or absolute path) of a file of newline-separated URLs to search.
 - `-v`: Enable verbose logging to the console.
 - `-vv`: Enable doubly-verbose logging to the console.
 
 **Examples**:
 
-- `input-field-finder -url=http://www.example.com/`: Searches `www.example.com` using the `http` scheme.
-- `input-field-finder -url=https://www.example.com/`: Searches `www.example.com` using the `https` scheme.
-- `input-field-finder -url=http://127.0.0.1/`: Searches `127.0.0.1` using the `http` scheme.
-- `input-field-finder -url=http://127.0.0.1:8080/`: Searches `127.0.0.1` using the `http` scheme, on port 8080.
-- `input-field-finder -url=http://127.0.0.1,http://www.example.com`: Searches `127.0.0.1` and `www.example.com` using the `http` scheme, on port 8080.
-- `input-field-finder -v -url=http://www.example.com/example/`: Searches `www.example.com` using the `http` scheme, starting at the `/example/` path, with verbose logging.
-- `input-field-finder -vv -url=http://www.example.com/example/page/1?id=2#heading`: Searches `www.example.com` using the `http` scheme, starting at the `/example/page/1` path, with a query of `id=2`, the `#heading` URL fragment, with verbose logging.
+- `input-field-finder -urls=http://www.example.com/`: Searches `www.example.com` using the `http` scheme.
+- `input-field-finder -urls=https://www.example.com/`: Searches `www.example.com` using the `https` scheme.
+- `input-field-finder -urls=http://127.0.0.1/`: Searches `127.0.0.1` using the `http` scheme.
+- `input-field-finder -urls=http://127.0.0.1:8080/`: Searches `127.0.0.1` using the `http` scheme, on port 8080.
+- `input-field-finder -urls=http://127.0.0.1,http://www.example.com`: Searches `127.0.0.1` and `www.example.com` using the `http` scheme, on port 8080.
+- `input-field-finder -url-file=/root/urls.txt`: Searches the URLs found in the file located at the absolute path of `/root/urls.txt`.
+- `input-field-finder -url-file=urls.txt`: Searches the URLs found in the `url.txt` file located in the current directory.
+- `input-field-finder -v -urls=http://www.example.com/example/`: Searches `www.example.com` using the `http` scheme, starting at the `/example/` path, with verbose logging.
+- `input-field-finder -vv -urls=http://www.example.com/example/page/1?id=2#heading`: Searches `www.example.com` using the `http` scheme, starting at the `/example/page/1` path, with a query of `id=2`, the `#heading` URL fragment, with verbose logging.
 
 ## Binaries
 
