@@ -52,7 +52,7 @@ type URLQueue struct {
 var urlQueue URLQueue
 
 // The command-line flags
-var flagStartURL = flag.String("url", "", "[REQUIRED] `URL or list of URLs` (comma-separated) to start spidering from. The domain and scheme will be used as the whitelist.")
+var flagStartURL = flag.String("urls", "", "URL or comma-separated list of URLs to search. The domain and scheme will be used as the whitelist.")
 var flagVerbose = flag.Bool("v", false, "Enable verbose logging to the console.")
 var flagVerbose2 = flag.Bool("vv", false, "Enable doubly-verbose logging to the console.")
 
@@ -69,13 +69,13 @@ func main() {
 		fmt.Fprint(os.Stderr, "  --help/-h: Displays this message\n")
 		flag.PrintDefaults()
 		fmt.Fprint(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "\t%s -url=http://www.example.com/\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "\t%s -url=https://www.example.com/\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "\t%s -url=http://127.0.0.1/\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "\t%s -url=http://127.0.0.1:8080/\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "\t%s -url=http://127.0.0.1,http://www.example.com/\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "\t%s -v -url=http://www.example.com/example/\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "\t%s -vv -url=http://www.example.com/example/page/1?id=2#heading\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\t%s -urls=http://www.example.com/\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\t%s -urls=https://www.example.com/\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\t%s -urls=http://127.0.0.1/\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\t%s -urls=http://127.0.0.1:8080/\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\t%s -urls=http://127.0.0.1,http://www.example.com/\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\t%s -v -urls=http://www.example.com/example/\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\t%s -vv -urls=http://www.example.com/example/page/1?id=2#heading\n", os.Args[0])
 	}
 
 	// Parse the command-line flags provided
@@ -329,5 +329,3 @@ func getInputs(document *html.Node, urlValue *url.URL) {
 		fmt.Println()
 	}
 }
-
-// TODO: Add option to automatically include any subdomains found while spidering
