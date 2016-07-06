@@ -1,6 +1,6 @@
 # input-field-finder
 
-Spiders a given URL's entire domain and prints out all `<input>` elements found on the given domain and scheme (http/https).
+Spiders the domain of a single URL or a set or URLs and prints out all `<input>` elements found on the given domain and scheme (http/https).
 
 ## Why?
 
