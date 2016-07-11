@@ -52,8 +52,11 @@ type URLQueue struct {
 
 var urlQueue URLQueue
 
-// Set a limit to the concurrency of network requests
-var concurrencyLimit chan struct{}
+// Set a limit to the number of concurrent workers
+var maxWorkers chan struct{}
+
+// Cucurrency limit value, changed by the concurrency flag
+var concurrencyLimit int
 
 // URLsInProcess is a wait group to ensure that all URLs are processed
 var URLsInProcess sync.WaitGroup
@@ -61,6 +64,7 @@ var URLsInProcess sync.WaitGroup
 // The command-line flags
 var flagStartURL = flag.String("urls", "", "URL or comma-separated list of URLs to search. The domain and scheme will be used as the whitelist.")
 var flagURLFile = flag.String("url-file", "", "The location (relative or absolute path) of a file of newline-separated URLs to search.")
+var flagConcurrency = flag.Int("concurrency", 3, "The level of concurrency in network requests and internal data processing. 0 - 5; 0 = no concurrency, 5 = very high level of concurrency.")
 var flagVerbose = flag.Bool("v", false, "Enable verbose logging to the console.")
 var flagVerbose2 = flag.Bool("vv", false, "Enable doubly-verbose logging to the console.")
 
@@ -81,6 +85,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\t%s -urls=https://www.example.com/\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\t%s -urls=http://127.0.0.1/\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\t%s -urls=http://127.0.0.1:8080/\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\t%s -concurrency=0 -urls=http://127.0.0.1:8080/\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\t%s -concurrency=5 -urls=http://127.0.0.1:8080/\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\t%s -urls=http://127.0.0.1,http://www.example.com/\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\t%s -url-file=/root/urls.txt\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\t%s -url-file=urls.txt\n", os.Args[0])
@@ -103,10 +109,24 @@ func main() {
 		URLs: make(map[string]bool),
 	}
 
-	// Set the concurrency limit.
-	// TODO: Make this user-configurable through flag
-	const LIMIT = 16 // Maximum of 16 concurrent network requests
-	concurrencyLimit = make(chan struct{}, LIMIT)
+	// Set the concurrency limit for requests and internal data processing
+	switch *flagConcurrency {
+	case 0:
+		// No concurrency
+		concurrencyLimit = 1
+	case 1:
+		concurrencyLimit = 2
+	case 2:
+		concurrencyLimit = 5
+	case 4:
+		concurrencyLimit = 20
+	case 5:
+		concurrencyLimit = 50
+	default:
+		// Default, == value of 3
+		concurrencyLimit = 10
+	}
+	maxWorkers = make(chan struct{}, concurrencyLimit)
 
 	// Check for values in the `-urls` flag
 	if *flagStartURL != "" {
@@ -188,10 +208,10 @@ func dataRouter(urlValue *url.URL) (err error) {
 	defer URLsInProcess.Done() // clean up
 
 	// Increment the concurrency limit
-	concurrencyLimit <- struct{}{}
+	maxWorkers <- struct{}{}
 
 	defer func() {
-		<-concurrencyLimit
+		<-maxWorkers
 	}() // Clean up
 
 	// Get the first URL's document body
