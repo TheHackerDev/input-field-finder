@@ -12,6 +12,7 @@ This is a command-line tool. Use the following flags to run the program:
 
 - `-urls`: URL or comma-separated list of URLs to search. The domain and scheme will be used as the whitelist.
 - `-url-file`: The location (relative or absolute path) of a file of newline-separated URLs to search.
+- `-concurrency`: The level of concurrency in network requests and internal data processing. `0 - 5`; `0` = no concurrency, `5` = very high level of concurrency. Default value of `3`.
 - `-v`: Enable verbose logging to the console.
 - `-vv`: Enable doubly-verbose logging to the console.
 
@@ -21,6 +22,8 @@ This is a command-line tool. Use the following flags to run the program:
 - `input-field-finder -urls=https://www.example.com/`: Searches `www.example.com` using the `https` scheme.
 - `input-field-finder -urls=http://127.0.0.1/`: Searches `127.0.0.1` using the `http` scheme.
 - `input-field-finder -urls=http://127.0.0.1:8080/`: Searches `127.0.0.1` using the `http` scheme, on port 8080.
+- `input-field-finder -concurrency=0 -urls=http://127.0.0.1:8080/`: Searches `127.0.0.1` using the `http` scheme, on port 8080, with no concurrency.
+- `input-field-finder -concurrency=5 -urls=http://127.0.0.1:8080/`: Searches `127.0.0.1` using the `http` scheme, on port 8080, with a very high level of concurrency.
 - `input-field-finder -urls=http://127.0.0.1,http://www.example.com`: Searches `127.0.0.1` and `www.example.com` using the `http` scheme, on port 8080.
 - `input-field-finder -url-file=/root/urls.txt`: Searches the URLs found in the file located at the absolute path of `/root/urls.txt`.
 - `input-field-finder -url-file=urls.txt`: Searches the URLs found in the `url.txt` file located in the current directory.
