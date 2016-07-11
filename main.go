@@ -52,6 +52,12 @@ type URLQueue struct {
 
 var urlQueue URLQueue
 
+// Set a limit to the concurrency of network requests
+var concurrencyLimit chan struct{}
+
+// URLsInProcess is a wait group to ensure that all URLs are processed
+var URLsInProcess sync.WaitGroup
+
 // The command-line flags
 var flagStartURL = flag.String("urls", "", "URL or comma-separated list of URLs to search. The domain and scheme will be used as the whitelist.")
 var flagURLFile = flag.String("url-file", "", "The location (relative or absolute path) of a file of newline-separated URLs to search.")
@@ -97,6 +103,11 @@ func main() {
 		URLs: make(map[string]bool),
 	}
 
+	// Set the concurrency limit.
+	// TODO: Make this user-configurable through flag
+	const LIMIT = 16 // Maximum of 16 concurrent network requests
+	concurrencyLimit = make(chan struct{}, LIMIT)
+
 	// Check for values in the `-urls` flag
 	if *flagStartURL != "" {
 		// Prepare the starting URLs
@@ -118,7 +129,7 @@ func main() {
 			// Add the URL to the whitelist
 			whitelist.Targets = append(whitelist.Targets, validURL)
 
-			// Add the URL to the queue
+			// Queue up the URL
 			addURL(validURL)
 		}
 	}
@@ -158,31 +169,30 @@ func main() {
 			// Add the URL to the whitelist
 			whitelist.Targets = append(whitelist.Targets, validURL)
 
-			// Add the URL to the queue
+			// Queue up the URL
 			addURL(validURL)
 		}
 	}
 
-	// Keep working as long as there are URLs in the queue
-	for len(urlQueue.URLs) > 0 {
-		// Pop the top URL from the queue
-		urlQueue.mutex.Lock()
-		var urlVal *url.URL
-		urlVal, urlQueue.URLs = urlQueue.URLs[len(urlQueue.URLs)-1], urlQueue.URLs[:len(urlQueue.URLs)-1]
-		urlQueue.mutex.Unlock()
-
-		// Start working on the next URL in the queue
-		dataRouter(urlVal)
-
-	}
+	// Wait for all URLs to be processed
+	URLsInProcess.Wait()
 }
 
 // Function dataRouter requests the given URL, and passes it to various helper functions.
 // It returns any errors it receives throughout this process.
 // Output functionality currently occurs in the helper functions.
 func dataRouter(urlValue *url.URL) (err error) {
-	// Set up a wait group for concurrency
+	// Set up an internal wait group for processing responses locally in a concurrent manner
 	var wg sync.WaitGroup
+
+	defer URLsInProcess.Done() // clean up
+
+	// Increment the concurrency limit
+	concurrencyLimit <- struct{}{}
+
+	defer func() {
+		<-concurrencyLimit
+	}() // Clean up
 
 	// Get the first URL's document body
 	response, err := client.Get(urlValue.String())
@@ -200,15 +210,15 @@ func dataRouter(urlValue *url.URL) (err error) {
 	// Run the spidering function on the html document
 	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		getAnchors(document, urlValue)
-		wg.Done()
 	}()
 
 	// Search for input fields in the html document
 	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		getInputs(document, urlValue)
-		wg.Done()
 	}()
 
 	// Wait for all the concurrent processes to finish
@@ -258,7 +268,7 @@ func getAnchors(document *html.Node, currentURL *url.URL) {
 						urlValue.Scheme = currentURL.Scheme
 					}
 
-					// Add the link to the list
+					// Queue up the URL
 					addURL(urlValue)
 				}
 			}
@@ -273,8 +283,8 @@ func getAnchors(document *html.Node, currentURL *url.URL) {
 	nodeSearch(document)
 }
 
-// Function addURL simply adds a URL to the URL queue, if it has
-// not already been visited.
+// Function addURL passes the URL back to the data router for processing
+// if it is whitelisted, and has not already been visited.
 func addURL(urlValue *url.URL) {
 	// Make sure the URL is in the whitelisted domains list
 	if isWhitelisted(urlValue) {
@@ -302,11 +312,14 @@ func addURL(urlValue *url.URL) {
 			}
 			// Add the URL to visited now, to prevent race issues
 			visited.URLs[urlValue.String()] = true
-			// Add the URL to the queue
-			urlQueue.mutex.Lock()
-			defer urlQueue.mutex.Unlock()
-			urlQueue.URLs = append(urlQueue.URLs, urlValue)
+
+			// Increment the global wait group
+			URLsInProcess.Add(1)
+
+			// Start processing the URL on a separate thread
+			go dataRouter(urlValue)
 		}
+
 	}
 	return
 }
