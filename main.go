@@ -44,14 +44,6 @@ type Whitelist struct {
 
 var whitelist Whitelist
 
-// URLQueue is a queue used to pass URLs found during spidering
-type URLQueue struct {
-	URLs  []*url.URL
-	mutex sync.RWMutex
-}
-
-var urlQueue URLQueue
-
 // Set a limit to the number of concurrent workers
 var maxWorkers chan struct{}
 
