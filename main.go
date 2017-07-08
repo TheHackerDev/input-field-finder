@@ -55,7 +55,7 @@ var urlQueue URLQueue
 // Set a limit to the number of concurrent workers
 var maxWorkers chan struct{}
 
-// Cucurrency limit value, changed by the concurrency flag
+// Concurrency limit value, changed by the concurrency flag
 var concurrencyLimit int
 
 // URLsInProcess is a wait group to ensure that all URLs are processed
